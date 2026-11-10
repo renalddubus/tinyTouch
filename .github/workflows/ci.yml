@@ -57,6 +57,8 @@ jobs:
           if git diff --quiet "$base" "$GITHUB_SHA" -- \
             macos tests VERSION release/build-standalone-macos.sh \
             release/check-python-runtime.py release/install.sh \
+            release/sign-macos-cli.sh release/stamp-installer.py \
+            release/finalize-release.py \
             release/release_integrity.py release/check-version.py \
             .github/workflows/ci.yml; then
             echo "cli=false" >> "$GITHUB_OUTPUT"

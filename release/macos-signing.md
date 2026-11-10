@@ -7,8 +7,20 @@ anchor, and Team ID. It excludes binary hashes and certificate common names.
 ARM64 and x86-64 releases must use the same team and requirement.
 
 An Apple Development or Developer ID Application certificate can provide this
-stable Keychain identity. This project does not notarize the CLI or enable
-hardened runtime. Code signing and notarization are separate steps.
+stable Keychain identity. The CLI and every bundled Mach-O library are signed
+with hardened runtime, which enables library validation and ignores
+`DYLD_INSERT_LIBRARIES`. This project does not notarize the CLI yet. Code
+signing and notarization are separate steps.
+
+## Installer trust
+
+The published `install.sh` is stamped at build time with the release Team ID
+(`release/stamp-installer.py`). Before running anything it downloaded, the
+installer checks that the CLI and each bundled library are signed by that team
+and that the CLI has hardened runtime. The checksum in the manifest only
+detects a damaged download. `tinytouch update` runs the installer bundled in
+the signed CLI instead of downloading one. A source checkout is unstamped and
+needs `TINYTOUCH_EXPECTED_TEAM_ID`.
 
 Release builds stop if the certificate, private key, or team pin is missing or
 invalid. They never fall back to ad hoc signing. CI builds can use ad hoc signing

@@ -222,10 +222,17 @@ class ReleasePipelineTests(unittest.TestCase):
             release.mkdir()
             self.make_release(release)
             output = root / "publish"
+            installer = root / "install.sh"
+            installer.write_text(
+                (ROOT / "release" / "install.sh").read_text().replace(
+                    "'__TINYTOUCH_TEAM_ID__'", "'TESTTEAM01'"
+                )
+            )
             subprocess.run(
                 [
                     "python3", str(ROOT / "release" / "finalize-release.py"),
                     str(release), "--output", str(output), "--commit", self.commit,
+                    "--installer", str(installer),
                 ],
                 check=True,
             )
@@ -236,6 +243,13 @@ class ReleasePipelineTests(unittest.TestCase):
             self.assertTrue((output / "tiny_touch_recovery_full.bin").is_file())
             self.assertFalse((output / "ota_slot1.bin").exists())
             self.assertFalse((output / "tinytouch-web-flashers.tar.gz").exists())
+
+            (output / "install.sh").write_text(
+                (ROOT / "release" / "install.sh").read_text()
+            )
+            with self.assertRaisesRegex(integrity.IntegrityError, "pinned signing team"):
+                integrity.validate_release(output, self.commit, flat=True)
+            (output / "install.sh").write_text(installer.read_text())
 
             (output / "unexpected.bin").write_bytes(b"unexpected")
             with self.assertRaisesRegex(integrity.IntegrityError, "published asset set mismatch"):

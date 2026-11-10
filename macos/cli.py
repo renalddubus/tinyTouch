@@ -2293,6 +2293,23 @@ def network_test() -> None:
     say("network ok")
 
 
+def bundled_installer() -> bytes:
+    """Return the installer shipped inside this CLI.
+
+    Running a script downloaded at update time would trust whatever the release
+    server returns. The bundled copy is covered by this CLI's code signature
+    and verifies the new CLI against the pinned Apple Team ID.
+    """
+    path = BUNDLE_ROOT / "install.sh" if FROZEN else PROJECT_ROOT / "release" / "install.sh"
+    try:
+        return path.read_bytes()
+    except OSError as exc:
+        raise ToolError(
+            "This tinyTouch build has no bundled installer. "
+            "Reinstall with the official installer."
+        ) from exc
+
+
 def command_update(args: argparse.Namespace) -> None:
     firmware_file = getattr(args, "firmware_file", None)
     if firmware_file is not None:
@@ -2314,7 +2331,7 @@ def command_update(args: argparse.Namespace) -> None:
     release_version = manifest["version"]
     if not getattr(args, "firmware_only", False) and release_version != CLI_VERSION:
         say(f"Updating tinyTouch CLI to {release_version}...")
-        installer = download(f"{root}/install.sh")
+        installer = bundled_installer()
         environment = os.environ.copy()
         environment["TINYTOUCH_RELEASE_ROOT"] = root
         result = subprocess.run(["/bin/sh"], input=installer, check=False, env=environment)

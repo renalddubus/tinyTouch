@@ -3,6 +3,28 @@
 set -eu
 
 release_root="${TINYTOUCH_RELEASE_ROOT:-https://github.com/ZimengXiong/tinyTouch/releases/latest/download}"
+# Release builds replace the placeholder with the Apple Team ID that signs the
+# CLI. A source checkout is unstamped and must be given TINYTOUCH_EXPECTED_TEAM_ID.
+pinned_team_id='__TINYTOUCH_TEAM_ID__'
+case "$pinned_team_id" in
+  __*)
+    pinned_team_id="${TINYTOUCH_EXPECTED_TEAM_ID:-}"
+    codesign_tool=codesign
+    ;;
+  *)
+    codesign_tool=/usr/bin/codesign
+    ;;
+esac
+case "$pinned_team_id" in
+  *[!A-Z0-9]*|'')
+    echo 'This installer has no pinned signing team. Use the official release installer.' >&2
+    exit 1
+    ;;
+esac
+if [ "${#pinned_team_id}" -ne 10 ]; then
+  echo 'This installer has an invalid signing team.' >&2
+  exit 1
+fi
 work_dir="$(mktemp -d)"
 trap 'rm -rf "$work_dir"' EXIT HUP INT TERM
 
@@ -41,6 +63,33 @@ if [ "${#release_sha256}" -ne 64 ]; then
   exit 1
 fi
 release_url="$release_root/$release_file"
+
+# The checksum only detects a damaged download: the manifest comes from the same
+# place as the archive. Trust comes from the pinned Apple Team ID, which an
+# attacker who can replace release files cannot forge.
+verify_signed_by_team() {
+  requirement="anchor apple generic and certificate leaf[subject.OU] = \"$pinned_team_id\""
+  "$codesign_tool" --verify --strict -R "=$requirement" "$1" >/dev/null 2>&1
+}
+
+verify_cli_bundle() {
+  cli_dir="$1"
+  newline='
+'
+  if [ -n "$(find "$cli_dir" -name "*$newline*" -print -quit)" ]; then
+    return 1
+  fi
+  "$codesign_tool" --verify --strict \
+    -R "=identifier \"com.tinytouch.cli\" and anchor apple generic and certificate leaf[subject.OU] = \"$pinned_team_id\"" \
+    "$cli_dir/tinytouch" >/dev/null 2>&1 || return 1
+  "$codesign_tool" -d --verbose=2 "$cli_dir/tinytouch" 2>&1 | grep -q 'flags=.*runtime' || return 1
+  find "$cli_dir/_internal" -type f ! -type l > "$work_dir/library-list"
+  while IFS= read -r library; do
+    if file -b "$library" | grep -q 'Mach-O'; then
+      verify_signed_by_team "$library" || return 1
+    fi
+  done < "$work_dir/library-list"
+}
 
 path_contains() {
   case ":$PATH:" in
@@ -93,7 +142,14 @@ mkdir -p "$support_dir"
 if [ ! -d "$bundle" ]; then
   mv "$work_dir/tinytouch" "$bundle"
 fi
-xattr -dr com.apple.quarantine "$bundle" 2>/dev/null || true
+
+# Never run anything from the download before its signature matches the team.
+if ! verify_cli_bundle "$bundle"; then
+  echo 'The tinyTouch CLI is not signed by the expected developer. Installation stopped.' >&2
+  echo 'Contact tinytouch@alpacaengineer.ing if this continues.' >&2
+  rm -rf "$bundle"
+  exit 1
+fi
 
 if ! "$bundle/tinytouch" --version; then
   echo 'The downloaded tinyTouch CLI cannot start on this Mac.' >&2

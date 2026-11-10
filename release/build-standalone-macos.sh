@@ -29,6 +29,11 @@ export PATH="$venv_dir/bin:$PATH"
 rm -rf "$build_dir"
 mkdir -p "$build_dir" "$dist_dir"
 
+# `tinytouch update` runs the installer bundled in the signed CLI instead of
+# executing a script downloaded at update time.
+"$venv_python" "$project_dir/release/stamp-installer.py" \
+  "$project_dir/release/install.sh" "$build_dir/install.sh"
+
 "$venv_python" -m PyInstaller \
   --noconfirm \
   --clean \
@@ -46,15 +51,17 @@ mkdir -p "$build_dir" "$dist_dir"
   --hidden-import serial.tools.list_ports \
   --collect-all esptool \
   --add-data "$project_dir/VERSION:." \
+  --add-data "$build_dir/install.sh:." \
   "$project_dir/macos/cli.py"
 
 bundle="$build_dir/bin/tinytouch"
 executable="$bundle/tinytouch"
 "$venv_python" "$project_dir/release/check-python-runtime.py" "$bundle"
 "$executable" _package_test
-# Keep this CLI certificate-signed without hardened runtime or notarization.
-# Bundled Python libraries retain their PyInstaller signatures.
+# Sign the CLI and every bundled library with the release identity and hardened
+# runtime. Notarization is a separate release step.
 zsh "$project_dir/release/sign-macos-cli.sh" "$executable"
+cp "$build_dir/install.sh" "$dist_dir/install.sh"
 rm -f "$output"
 tar -C "$build_dir/bin" -czf "$output" tinytouch
 codesign --verify --strict --verbose=2 "$executable"

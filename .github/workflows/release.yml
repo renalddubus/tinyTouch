@@ -185,7 +185,9 @@ jobs:
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: release-cli-${{ matrix.expected_arch }}
-          path: dist/tinytouch.tar.gz
+          path: |
+            dist/tinytouch.tar.gz
+            dist/install.sh
           if-no-files-found: error
 
   publish:
@@ -224,7 +226,8 @@ jobs:
           python release/release_integrity.py assembled dist/release \
             --commit "$RELEASE_COMMIT"
           python release/finalize-release.py dist/release \
-            --output dist/publish --commit "$RELEASE_COMMIT"
+            --output dist/publish --commit "$RELEASE_COMMIT" \
+            --installer dist/cli-arm64/install.sh
       - name: Attest release assets
         uses: actions/attest-build-provenance@8beda2b7ed98355c0e97c0a63bec38ae472e66c4
         with:

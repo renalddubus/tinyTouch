@@ -43,6 +43,50 @@ class MacOSSigningTests(unittest.TestCase):
         )
         self.assertIn("require a pinned", error)
 
+    def test_signing_script_requests_hardened_runtime_for_every_binary(self):
+        script = (ROOT / "release/sign-macos-cli.sh").read_text()
+        self.assertGreaterEqual(script.count("--options runtime"), 3)
+        self.assertIn("_internal", script)
+        self.assertNotIn("--timestamp=none --identifier", script)
+        self.assertIn("must be signed with hardened runtime", script)
+
+
+class InstallerStampTests(unittest.TestCase):
+    def stamp(self, team_id, required="0"):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "install.sh"
+            environment = {
+                **os.environ,
+                "TINYTOUCH_SIGNING_TEAM_ID": team_id,
+                "TINYTOUCH_REQUIRE_STABLE_IDENTITY": required,
+            }
+            result = subprocess.run(
+                ["python3", str(ROOT / "release/stamp-installer.py"),
+                 str(ROOT / "release/install.sh"), str(output)],
+                env=environment, capture_output=True, text=True,
+            )
+            text = output.read_text() if output.exists() else ""
+            return result, text
+
+    def test_release_installer_pins_the_team(self):
+        result, text = self.stamp("ABCDE12345", required="1")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("pinned_team_id='ABCDE12345'", text)
+        self.assertNotIn("'__TINYTOUCH_TEAM_ID__'", text)
+
+    def test_release_installer_requires_a_valid_team(self):
+        for team_id in ("", "abc", "ABCDE1234!"):
+            with self.subTest(team_id=team_id):
+                result, _ = self.stamp(team_id, required="1")
+                self.assertNotEqual(result.returncode, 0)
+
+    def test_development_installer_stays_unstamped(self):
+        result, text = self.stamp("", required="0")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("'__TINYTOUCH_TEAM_ID__'", text)
+
 
 if __name__ == "__main__":
     unittest.main()

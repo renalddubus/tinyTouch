@@ -487,7 +487,8 @@ class ProtocolSixTests(unittest.TestCase):
         )
         with (
             mock.patch.object(cli, "update_release", return_value=(root, manifest)),
-            mock.patch.object(cli, "download", return_value=b"installer") as download,
+            mock.patch.object(cli, "bundled_installer", return_value=b"installer"),
+            mock.patch.object(cli, "download") as download,
             mock.patch.object(
                 cli.subprocess, "run", side_effect=[installer_result, version_result]
             ) as run,
@@ -496,7 +497,8 @@ class ProtocolSixTests(unittest.TestCase):
             self.assertRaisesRegex(RuntimeError, "exec"),
         ):
             cli.command_update(args)
-        download.assert_called_once_with(f"{root}/install.sh")
+        download.assert_not_called()
+        self.assertEqual(run.call_args_list[0].kwargs["input"], b"installer")
         self.assertEqual(run.call_args_list[0].kwargs["env"]["TINYTOUCH_RELEASE_ROOT"], root)
         execv.assert_called_once_with(
             "/usr/local/bin/tinytouch",

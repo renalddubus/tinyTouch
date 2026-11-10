@@ -27,6 +27,12 @@ def main() -> None:
     parser.add_argument("release", type=Path)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--commit", required=True)
+    parser.add_argument(
+        "--installer",
+        type=Path,
+        required=True,
+        help="install.sh stamped with the release signing Team ID",
+    )
     args = parser.parse_args()
     release = args.release.resolve()
     output = args.output.resolve()
@@ -41,7 +47,7 @@ def main() -> None:
             copy_once(release / kind / metadata["file"], output / metadata["file"])
     for metadata in (manifest["ota"], *manifest["cli"].values()):
         copy_once(release / metadata["file"], output / metadata["file"])
-    copy_once(ROOT / "release" / "install.sh", output / "install.sh")
+    copy_once(args.installer.resolve(), output / "install.sh")
 
     with tarfile.open(output / "tinytouch-firmware.tar.gz", "w:gz") as archive:
         for name in ("factory", "recovery", "release-manifest.json"):

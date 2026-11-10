@@ -266,6 +266,8 @@ def validate_release(root: Path, commit: str, *, flat: bool = False,
                 "missing or invalid installer")
         require(installer.read_bytes().startswith(b"#!/bin/sh\n"),
                 "installer must be a POSIX shell script")
+        require(b"'__TINYTOUCH_TEAM_ID__'" not in installer.read_bytes(),
+                "installer is missing its pinned signing team")
         expected = set(public) | {
             "release-manifest.json",
             "tinytouch-firmware.tar.gz",

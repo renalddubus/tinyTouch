@@ -32,7 +32,28 @@ if [[ "${TINYTOUCH_REQUIRE_STABLE_IDENTITY:-0}" == 1 && -z "${TINYTOUCH_SIGNING_
   exit 1
 fi
 
-codesign --force --timestamp=none --identifier com.tinytouch.cli \
+# Hardened runtime enables library validation: the process refuses to load a
+# library that is unsigned or signed by another team, and ignores
+# DYLD_INSERT_LIBRARIES. Published releases also request a secure timestamp.
+timestamp_arg=(--timestamp=none)
+if [[ "${TINYTOUCH_REQUIRE_STABLE_IDENTITY:-0}" == 1 ]]; then
+  timestamp_arg=(--timestamp)
+fi
+
+# Re-sign every bundled Mach-O with the release identity before the executable.
+# Library validation rejects libraries from another signer, so a leftover
+# PyInstaller signature would stop the hardened CLI from starting.
+internal_dir="${executable:h}/_internal"
+if [[ -d "$internal_dir" ]]; then
+  find "$internal_dir" -type f ! -type l -print0 | while IFS= read -r -d '' library; do
+    if file -b "$library" | grep -q 'Mach-O'; then
+      codesign --force --options runtime "${timestamp_arg[@]}" \
+        --sign "$signing_identity" "${keychain_args[@]}" "$library"
+    fi
+  done
+fi
+
+codesign --force --options runtime "${timestamp_arg[@]}" --identifier com.tinytouch.cli \
   --sign "$signing_identity" "${keychain_args[@]}" "$executable"
 codesign --verify --strict --verbose=2 "$executable"
 if [[ "$signing_identity" != - ]]; then
@@ -47,7 +68,7 @@ if [[ "$signing_identity" != - ]]; then
   fi
   # Pin product and team, not a changing binary hash or certificate name.
   requirement="identifier \"com.tinytouch.cli\" and anchor apple generic and certificate leaf[subject.OU] = \"$team_id\""
-  codesign --force --timestamp=none --identifier com.tinytouch.cli \
+  codesign --force --options runtime "${timestamp_arg[@]}" --identifier com.tinytouch.cli \
     --requirements "=designated => $requirement" \
     --sign "$signing_identity" "${keychain_args[@]}" "$executable"
   codesign --verify --strict -R "=$requirement" "$executable"
@@ -55,5 +76,9 @@ if [[ "$signing_identity" != - ]]; then
     print -u2 'The CLI signing requirement must remain stable across builds.'
     exit 1
   fi
+fi
+if ! codesign -d --verbose=2 "$executable" 2>&1 | grep -q 'flags=.*runtime'; then
+  print -u2 'The CLI must be signed with hardened runtime.'
+  exit 1
 fi
 print "Signed executable with: $signing_identity"
